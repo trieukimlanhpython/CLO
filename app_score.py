@@ -106,12 +106,16 @@ if st.sidebar.button("▶️ Thực hiện tính điểm"):
         df_clo.insert(0, 'MSSV', df2['mssv'])
 
         # ======= 7. Gộp kết quả vào danh sách sinh viên =======
+        # ❗ Xóa hoàn toàn các cột có chứa "CLO" hoặc "Tong" trước khi merge
+        df1_clean = df1.loc[:, ~df1.columns.str.contains('CLO|Tong', case=False, regex=True)]
+        
         df_final = pd.merge(
-            df1.drop(columns=[c for c in df1.columns if 'CLO' in c or 'Tong' in c], errors='ignore'),
+            df1_clean,
             df_clo,
             on='MSSV',
             how='left'
         ).fillna(0)
+
 
         # ======= 8. Tính tổng điểm =======
         cols_diem = [c for c in df_final.columns if 'CLO' in c]
