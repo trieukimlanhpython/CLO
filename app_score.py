@@ -4,7 +4,8 @@
 Created on Thu Oct 17 2025
 @author: trieukimlanh
 
-🎓 Ứng dụng tính điểm CLO_30
+🎓 Ứng dụng tính điểm CLO (tự nhận dạng mã đề & CLO)
+streamlit run "app_clo.py"
 """
 
 import pandas as pd
@@ -14,7 +15,7 @@ import unidecode
 
 # ====================== GIAO DIỆN ======================
 st.set_page_config(page_title="Ứng dụng tính điểm CLO", layout="wide")
-st.title("🎓 Ứng dụng tính điểm CLO")
+st.title("🎓 Ứng dụng tính điểm CLO (tự nhận mã đề)")
 
 st.sidebar.header("⚙️ Upload dữ liệu")
 uploaded_files = st.sidebar.file_uploader(
@@ -46,7 +47,7 @@ if st.sidebar.button("▶️ Thực hiện tính điểm"):
         df3 = pd.read_csv(df3_file)
         df4 = pd.read_csv(df4_file)
 
-        # ======= 3. Chuẩn hóa =======
+        # ======= 3. Chuẩn hóa dữ liệu =======
         df3['Câu'] = (
             df3['Câu'].astype(str)
             .apply(unidecode.unidecode)
@@ -55,88 +56,76 @@ if st.sidebar.button("▶️ Thực hiện tính điểm"):
             .str.lower()
         )
 
-        # Tự động nhận diện các cột mã đề (loại bỏ cột 'Câu' và 'Đáp án...')
-        ma_de_cols = [c for c in df3.columns if c.lower() not in ['câu'] and "đáp" not in c.lower()]
-        dap_an_cols = [c for c in df3.columns if "đáp" in c.lower()]
+        # Nhận diện các cột mã đề (loại trừ cột "Câu" và các cột "Đáp án_*")
+        de_cols = [c for c in df3.columns if c not in ['Câu'] and not c.startswith("Đáp án")]
 
+        # Chuẩn hóa đáp án
+        for c in df3.columns:
+            if "Đáp án" in c:
+                df3[c] = df3[c].astype(str).str.strip().str.upper()
+
+        # Chuẩn hóa df2 (bài làm SV)
         df2.columns = [unidecode.unidecode(c.strip().replace(' ', '').lower()) for c in df2.columns]
         for c in df2.columns:
             if c.startswith('cau'):
                 df2[c] = df2[c].astype(str).str.strip().str.upper()
 
-        # Chuẩn hóa df4 và ánh xạ điểm
+        # Chuẩn hóa df4 (điểm từng CLO)
         df4['CLO'] = df4['CLO'].astype(str).str.strip().str.upper()
         df4['Điểm'] = pd.to_numeric(df4['Điểm'], errors='coerce').fillna(0)
         map_diem = df4.set_index('CLO')['Điểm'].to_dict()
 
-        # Tạo các cột điểm cho từng mã đề (tự động)
-        for ma_de in ma_de_cols:
-            df3[f'Điểm_{ma_de}'] = df3[ma_de].map(map_diem).fillna(0)
+        # ======= 4. Map điểm CLO vào df3 cho từng mã đề =======
+        for de in de_cols:
+            df3[f"Điểm_{de}"] = df3[de].map(map_diem).fillna(0)
 
-        # Chuẩn hóa đáp án
-        for c in dap_an_cols:
-            df3[c] = df3[c].astype(str).str.strip().str.upper()
-
-        # ======= 4. Hàm tính điểm tự động =======
+        # ======= 5. Hàm tính điểm (linh hoạt với nhiều đề) =======
         def calc_clo_scores(row):
-            try:
-                de = str(int(row['de'])) if not pd.isna(row['de']) else str(row['de']).strip()
-            except:
-                de = str(row['de']).strip()
             clo_scores = {}
-
-            # Dò xem mã đề có tồn tại trong df3 không
-            if de not in ma_de_cols:
+            de = str(int(row['de'])) if pd.notna(row['de']) else None
+            if not de or f"Đáp án_{de}" not in df3.columns:
                 return pd.Series(clo_scores)
-
-            # Tìm cột đáp án tương ứng
-            dap_an_col = next((c for c in dap_an_cols if de in c), None)
-            diem_col = f'Điểm_{de}'
 
             for _, q in df3.iterrows():
                 cau_key = q['Câu']
                 if cau_key not in row.index:
                     continue
+
                 pa_sv = str(row[cau_key]).strip().upper()
+                dap_an = str(q.get(f"Đáp án_{de}", "")).strip().upper()
+                clo = q.get(de, None)
+                diem_cau = q.get(f"Điểm_{de}", 0)
 
-                dap_an = q[dap_an_col] if dap_an_col in q else None
-                clo = q[de]
-                diem_cau = q[diem_col] if diem_col in q else 0
-
-                if dap_an and pa_sv == dap_an:
+                if clo and dap_an and pa_sv == dap_an:
                     clo_scores[clo] = clo_scores.get(clo, 0) + diem_cau
 
             return pd.Series(clo_scores)
 
-        # ======= 5. Tính điểm =======
+        # ======= 6. Tính điểm CLO cho tất cả sinh viên =======
         df_clo = df2.apply(calc_clo_scores, axis=1)
         df_clo.insert(0, 'MSSV', df2['mssv'])
 
-        # ======= 6. Gộp vào danh sách sinh viên =======
+        # ======= 7. Gộp kết quả vào danh sách sinh viên =======
         df_final = pd.merge(
-            df1.drop(columns=[col for col in df1.columns if 'CLO' in col or 'Tong' in col], errors='ignore'),
+            df1.drop(columns=[c for c in df1.columns if 'CLO' in c or 'Tong' in c], errors='ignore'),
             df_clo,
             on='MSSV',
             how='left'
         ).fillna(0)
 
-        # ======= 7. Tính tổng điểm =======
+        # ======= 8. Tính tổng điểm =======
         cols_diem = [c for c in df_final.columns if 'CLO' in c]
-        if cols_diem:
-            df_final["Tong diem"] = df_final[cols_diem].sum(axis=1)
-        else:
-            df_final["Tong diem"] = 0
+        df_final["Tổng điểm"] = df_final[cols_diem].sum(axis=1)
 
-        # ======= 8. Tổng hợp CLO1–CLO3 (tự động) =======
-        for i in range(1, 6):  # linh hoạt nếu sau này có CLO4, CLO5
-            clo_cols = [c for c in df_final.columns if f'CLO{i}' in c]
-            if clo_cols:
-                df_final[f'CLO{i}'] = df_final[clo_cols].sum(axis=1)
+        # ======= 9. Tổng hợp điểm theo CLO1–CLO3 =======
+        for i in range(1, 6):
+            col_name = f'CLO{i}'
+            related_cols = [c for c in df_final.columns if col_name in c]
+            if related_cols:
+                df_final[col_name] = df_final[related_cols].sum(axis=1)
+        df_final["Tổng điểm (CLO tổng)"] = df_final[[c for c in df_final.columns if c.startswith("CLO")]].sum(axis=1)
 
-        clo_group_cols = [c for c in df_final.columns if c.startswith('CLO') and len(c) == 4]
-        df_final["Tong diem (CLO tổng)"] = df_final[clo_group_cols].sum(axis=1)
-
-        # ======= 9. Hiển thị & tải kết quả =======
+        # ======= 10. Hiển thị kết quả =======
         st.success("✅ Tính điểm hoàn tất!")
         st.subheader("📊 Kết quả tổng hợp điểm CLO")
         st.dataframe(df_final)
@@ -144,13 +133,13 @@ if st.sidebar.button("▶️ Thực hiện tính điểm"):
         csv_final = df_final.to_csv(index=False).encode('utf-8-sig')
         st.download_button("💾 Tải file kết quả đầy đủ", csv_final, "ket_qua_tich_hop_full.csv", "text/csv")
 
-        # ======= 10. Phổ điểm =======
+        # ======= 11. Phổ điểm =======
         st.subheader("🎯 Phổ điểm sinh viên (theo tổng điểm CLO)")
         bins = [0, 5, 6, 7, 8, 9, 10]
         labels = ["Dưới 5", "Từ 5 - <6", "Từ 6 - <7", "Từ 7 - <8", "Từ 8 - <9", "Từ 9 - 10"]
 
         df_final["Nhóm điểm"] = pd.cut(
-            df_final["Tong diem (CLO tổng)"], bins=bins, labels=labels,
+            df_final["Tổng điểm (CLO tổng)"], bins=bins, labels=labels,
             right=False, include_lowest=True
         )
         score_dist = df_final["Nhóm điểm"].value_counts().reindex(labels, fill_value=0)
@@ -168,9 +157,9 @@ if st.sidebar.button("▶️ Thực hiện tính điểm"):
                 ax.text(i, v + 0.2, str(v), ha='center')
             st.pyplot(fig)
 
-        # ======= 11. Tổng điểm tối đa linh hoạt =======
-        max_score = sum(df3[f'Điểm_{ma}'].sum() for ma in ma_de_cols if f'Điểm_{ma}' in df3.columns)
-        st.info(f"🔍 Tổng điểm tối đa (nếu đúng hết): {max_score}")
+        # ======= 12. Thông tin tổng điểm tối đa =======
+        max_score = df3[[c for c in df3.columns if c.startswith("Điểm_")]].sum().max()
+        st.info(f"🔍 Tổng điểm tối đa (nếu đúng hết): {max_score:.2f}")
 
     except Exception as e:
         st.error(f"❌ Lỗi khi xử lý dữ liệu: {e}")
