@@ -2,7 +2,7 @@
 Created on Thu Oct 17 2025
 @author: trieukimlanh
 
-🎓 Ứng dụng tính điểm CLO_30 (mã đề linh hoạt)
+🎓 Ứng dụng tính điểm CLO_30 (mã đề trắc nghiệm linh hoạt, 30 câu), môn TT-NH-Fintech
 """
 
 import re
@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import unidecode
 
 # ====================== GIAO DIỆN ======================
-st.set_page_config(page_title="Ứng dụng tính điểm CLO_30", layout="wide")
+st.set_page_config(page_title="🎓 Ứng dụng tính điểm CLO_30", layout="wide")
 st.title("🎓 Ứng dụng tính điểm CLO_30")
 
 st.sidebar.header("⚙️ Upload dữ liệu")
